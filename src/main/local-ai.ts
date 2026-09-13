@@ -5,7 +5,7 @@ import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { join } from 'node:path'
-import { LOCAL_MODEL, type LocalAIStatus } from '../shared/local-ai'
+import { LOCAL_MODEL, LOCAL_VISION_MODEL, type LocalAIStatus } from '../shared/local-ai'
 
 const run = promisify(execFile)
 export const LOCAL_AI_URL = 'http://127.0.0.1:11435'
@@ -13,10 +13,11 @@ const exists = async (path: string): Promise<boolean> => access(path).then(() =>
 
 /** Private, loopback-only Ollama process. Never modifies an existing installation. */
 export class LocalAI {
-    private state: LocalAIStatus = { phase: 'idle', message: 'Local AI will prepare in the background (~1 GB model plus Ollama).' }
+    private state: LocalAIStatus = { phase: 'idle', message: 'Preparing local text and vision AI (~3 GB of models plus Ollama).' }
     private pending?: Promise<void>
     private abort?: AbortController
     private server?: ChildProcess
+    private textReady = false
     private readonly root: string
     constructor(userData: string) { this.root = join(userData, 'local-ai') }
     status(): LocalAIStatus { return { ...this.state } }
@@ -24,10 +25,11 @@ export class LocalAI {
     start(resume = false): Promise<void> {
         if (this.pending || this.state.phase === 'ready') return this.pending ?? Promise.resolve()
         this.pending = this.begin(resume).catch(error => {
-            this.server?.kill()
-            this.server = undefined
+            if (!this.textReady) { this.server?.kill(); this.server = undefined }
             if (this.abort?.signal.aborted) this.update('paused', 'Local AI setup paused. Resume when you are ready.')
-            else this.update('error', error instanceof Error ? error.message : 'Local AI setup failed.')
+            else this.update('error', this.textReady
+                ? 'Screenshot model download failed. Text chat is ready. Retry the download in Settings.'
+                : 'Local AI setup could not finish. Check your connection and retry in Settings.')
         }).finally(() => { this.pending = undefined })
         return this.pending
     }
@@ -46,17 +48,18 @@ export class LocalAI {
         // Stopping our private server also stops any pull still running there.
         this.server?.kill()
         this.server = undefined
+        this.textReady = false
         this.update('paused', 'Local AI setup paused.')
     }
     dispose(): void { this.abort?.abort(); this.server?.kill() }
-    async provider(): Promise<{baseURL:string; model:string; apiKey:string}> {
-        if (this.state.phase !== 'ready') throw new Error(this.state.message)
-        return {baseURL: LOCAL_AI_URL + '/v1', model: LOCAL_MODEL, apiKey: 'ollama-local'}
+    async provider(vision = false): Promise<{baseURL:string; model:string; apiKey:string}> {
+        if (this.state.phase !== 'ready' && (vision || !this.textReady)) throw new Error(this.state.message)
+        return {baseURL: LOCAL_AI_URL + '/v1', model: vision ? LOCAL_VISION_MODEL : LOCAL_MODEL, apiKey: 'ollama-local'}
     }
     private async prepare(signal: AbortSignal): Promise<void> {
         if (process.platform !== 'darwin') throw new Error('Automatic local AI setup currently supports macOS only.')
         const disk = await statfs(this.root)
-        if (disk.bavail * disk.bsize < 5 * 1024 ** 3) throw new Error('Local AI needs at least 5 GB of free disk space for setup.')
+        if (disk.bavail * disk.bsize < 7 * 1024 ** 3) throw new Error('Local AI needs at least 7 GB of free disk space for text and vision setup.')
         const bundle = join(this.root, 'Ollama.app')
         let binary = '/Applications/Ollama.app/Contents/Resources/ollama'
         if (!await exists(binary)) {
@@ -80,16 +83,18 @@ export class LocalAI {
         signal.throwIfAborted()
         this.update('starting', 'Starting local AI…')
         // Do not attach to an unknown service occupying the private port.
-        if (await fetch(LOCAL_AI_URL + '/api/version', {signal: AbortSignal.timeout(500)}).then(() => true, () => false)) {
+        if (!this.server && await fetch(LOCAL_AI_URL + '/api/version', {signal: AbortSignal.timeout(500)}).then(() => true, () => false)) {
             throw new Error('Local AI port 11435 is already in use. Close the other Codex Lite instance and retry.')
         }
         let processError = ''
+        if (!this.server) {
         this.server = spawn(binary, ['serve'], {env: {...process.env,
             OLLAMA_HOST:'127.0.0.1:11435', OLLAMA_NO_CLOUD:'1', OLLAMA_MODELS:join(this.root,'models'),
             OLLAMA_CONTEXT_LENGTH:'8192', OLLAMA_NUM_PARALLEL:'1'
         }, stdio:'ignore'})
         this.server.on('error', error => { processError = error.message })
-        this.server.on('exit', () => { if (this.state.phase === 'ready') this.update('error', 'Local AI stopped. Retry setup to restart it.') })
+        this.server.on('exit', () => { this.textReady = false; this.server = undefined; if (this.state.phase === 'ready') this.update('error', 'Local AI stopped. Retry setup to restart it.') })
+        }
         let reachable = false
         for (let attempt = 0; attempt < 60; attempt++) {
             signal.throwIfAborted()
@@ -100,10 +105,11 @@ export class LocalAI {
         }
         if (!reachable) throw new Error('Ollama did not start. Retry setup or check macOS security permissions.')
         const tags = await fetch(LOCAL_AI_URL + '/api/tags', {signal}).then(r => r.json()) as {models?:Array<{name:string}>}
-        if (!tags.models?.some(m => m.name === LOCAL_MODEL)) {
-            this.update('downloading', 'Downloading Qwen Coder starter model (~986 MB)…')
+        for (const model of [LOCAL_MODEL, LOCAL_VISION_MODEL]) {
+        if (!tags.models?.some(m => m.name === model)) {
+            this.update('downloading', model === LOCAL_VISION_MODEL ? 'Downloading Qwen vision model (~1.9 GB)…' : 'Downloading Qwen Coder starter model (~986 MB)…')
             const response = await fetch(LOCAL_AI_URL + '/api/pull', {method:'POST',signal,
-                headers:{'Content-Type':'application/json'},body:JSON.stringify({model:LOCAL_MODEL,stream:true})})
+                headers:{'Content-Type':'application/json'},body:JSON.stringify({model,stream:true})})
             if (!response.ok || !response.body) throw new Error('Model download failed. Retry when connected.')
             const reader = response.body.getReader()
             const decoder = new TextDecoder()
@@ -119,12 +125,19 @@ export class LocalAI {
                     const progress = JSON.parse(line) as {status?:string;error?:string;completed?:number;total?:number}
                     if (progress.error) throw new Error(progress.error)
                     if (progress.status === 'success') success = true
-                    this.update('downloading', progress.status || 'Downloading model…', progress.total ? Math.round(100*(progress.completed||0)/progress.total) : undefined)
+                    this.update('downloading', `${model}: ${progress.status || 'Downloading model…'}`, progress.total ? Math.round(100*(progress.completed||0)/progress.total) : undefined)
                 }
             }
             if (!success) throw new Error('Model download was interrupted. Retry to resume.')
         }
+        if (model === LOCAL_MODEL) this.textReady = true
+        }
+        const visionResponse = await fetch(LOCAL_AI_URL + '/api/show', { method: 'POST', signal,
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: LOCAL_VISION_MODEL }) })
+        if (!visionResponse.ok) throw new Error('Could not verify Qwen vision. Update Ollama and retry setup.')
+        const vision = await visionResponse.json() as { capabilities?: string[] }
+        if (!vision.capabilities?.includes('vision')) throw new Error('This Ollama installation does not report vision support. Update Ollama and retry setup.')
         signal.throwIfAborted()
-        this.update('ready', 'Qwen Coder · Local AI ready')
+        this.update('ready', 'Qwen Coder + Qwen Vision · Local AI ready')
     }
 }

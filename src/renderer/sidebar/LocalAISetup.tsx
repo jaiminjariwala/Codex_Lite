@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import type { LocalAIStatus } from '@shared/local-ai'
 
-export function LocalAISetup(): React.JSX.Element | null {
-    const [status, setStatus] = useState<LocalAIStatus>({phase:'idle', message:'Preparing local AI (~1 GB model plus Ollama)…'})
+export function LocalAISetup({ hidden = false, label = false }: { hidden?: boolean; label?: boolean }): React.JSX.Element | null {
+    const [status, setStatus] = useState<LocalAIStatus>({phase:'idle', message:'Preparing local text and vision AI (~3 GB of models plus Ollama)…'})
     useEffect(() => {
         let active = true
         const update = (value: LocalAIStatus): void => { if (active) setStatus(value) }
@@ -13,7 +13,15 @@ export function LocalAISetup(): React.JSX.Element | null {
         return () => { active = false; clearInterval(timer) }
     }, [])
     const busy = ['idle','installing','starting','downloading'].includes(status.phase)
-    if (status.phase === 'ready') return null
+    if (hidden) return null
+    if (label) {
+        const text = status.phase === 'ready' ? 'Downloaded. Text and screenshot models are ready.'
+            : status.phase === 'downloading' ? `Downloading ${/vision|qwen3-vl/i.test(status.message) ? 'Qwen screenshot' : 'Qwen Coder local'} model${status.percent === undefined ? '…' : ` · ${status.percent}%`}`
+            : status.phase === 'error' || status.phase === 'paused' ? 'Manage model downloads in Settings'
+            : 'Preparing Qwen local models…'
+        return <div className="glass-composer-model" role="status">{text}</div>
+    }
+    if (status.phase === 'ready') return <p className="local-ai-setup">Text and screenshot models are ready.</p>
     return <div className="local-ai-setup" role="status">
         <span>{status.message}{status.percent === undefined ? '' : ` ${status.percent}%`}</span>
         <button type="button" onClick={() => {

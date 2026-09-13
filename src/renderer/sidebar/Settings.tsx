@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { LocalAISetup } from './LocalAISetup'
 import type { ConfigStatus, MemoryEntry } from '@shared/types'
 import { getConfigBridge } from './config-bridge'
 import { getChatBridge } from './bridges'
@@ -65,7 +66,8 @@ export function Settings({ onConfigStatusChange: _onConfigStatusChange, onBack }
         </button>}
         <DockIconSettings />
         <h3 style={sectionTitle}>Local AI</h3>
-        <p style={hintStyle}>Ollama runs Qwen Coder on this Mac. Download progress and pause/resume controls appear above the message field. The starter model supports text and code, not visual attachments.</p>
+        <p style={hintStyle}>Ollama runs Qwen Coder for text and Qwen3-VL for screenshots on this Mac. Images stay local. Manage model downloads below.</p>
+        <LocalAISetup />
         <MemorySection />
     </section>
 }

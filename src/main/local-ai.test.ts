@@ -11,7 +11,7 @@ async function service(): Promise<LocalAI> {
     return new LocalAI(path)
 }
 it('refuses inference before setup completes', async () => {
-    await expect((await service()).provider()).rejects.toThrow('prepare')
+    await expect((await service()).provider()).rejects.toThrow('Preparing')
 })
 it('persists pause so launch does not silently restart a download', async () => {
     const ai = await service()
@@ -25,5 +25,16 @@ it('deduplicates concurrent startup requests and reports preparation errors', as
         .mockRejectedValue(new Error('Download interrupted'))
     await Promise.all([ai.start(),ai.start(),ai.start()])
     expect(prepare).toHaveBeenCalledTimes(1)
-    expect(ai.status()).toMatchObject({phase:'error',message:'Download interrupted'})
+    expect(ai.status()).toMatchObject({phase:'error',message:'Local AI setup could not finish. Check your connection and retry in Settings.'})
+})
+it('keeps text available when the optional vision download fails and hides raw URLs', async () => {
+    const ai = await service()
+    vi.spyOn(ai as unknown as {prepare(signal:AbortSignal):Promise<void>}, 'prepare').mockImplementation(async () => {
+        Object.assign(ai, { textReady: true })
+        throw new Error('download failed https://example.com/signed-secret')
+    })
+    await ai.start()
+    expect((await ai.provider()).model).toBe('qwen2.5-coder:1.5b')
+    await expect(ai.provider(true)).rejects.toThrow('Screenshot model download failed')
+    expect(ai.status().message).not.toContain('https://')
 })
