@@ -1,162 +1,117 @@
 # Codex Lite
 
-**An independent chat and code workspace for macOS — $1/month desktop access.**
+No, this is not Codex. This is Codex Lite.
 
-Codex Lite brings your conversations, screen, files, videos, and
-email into one place. Ask for help, share what you are looking at, or hand off a
-task when you want it done for you.
+I built a macOS app that puts AI chat, your code, and a browser next to each other. Ask a question, open a file, look something up, or attach a screenshot without constantly switching windows.
 
-Ask coding questions and view generated code in the right-side workspace.
-GitHub sign-in and Stripe Checkout handle access. Publisher-managed Gemini and
-OpenRouter free models power answers; customers do not paste API keys. Shared
-free quotas can run out, including for paying customers. This is not an OpenAI
-product and does not include a Codex or ChatGPT subscription.
+This is my independent portfolio project, not an OpenAI product. It does not include a Codex or ChatGPT subscription.
 
-## What Codex Lite can do
+![Codex Lite chat and code workspace](docs/media/code-workspace.png)
 
-- **Chat with context** — keep conversations and history together instead of
-  starting from scratch every time.
-- **See what you see** — capture a region, a window, or the full screen and ask
-  about it.
-- **Understand more than screenshots** — attach images, PDFs, videos, camera
-  recordings, or the email currently selected in Apple Mail or Outlook.
-- **Take voice input locally** — dictate with on-device Whisper.
-- **Remember useful details** — review, add, or clear saved memory from
-  Settings.
-- **Experimental automation** — retained browser and Mac tools can attempt basic
-  tasks. Even short tasks may require multiple calls; completion is not guaranteed.
-  Long tasks such as creating Blender scenes are outside the paid offer.
-- **Repeat routine work** — save a task as a playbook, run it again with one
-  click, or schedule it daily while the app is open.
-- **Managed AI** — Gemini and OpenRouter free-model routing, with shared quotas
-  and a separate capped app allowance.
+## Take a look
 
-## How it fits together
+### Watch it in action
 
-| What you do | What Codex Lite does |
-| --- | --- |
-| Ask a question | Answers in the conversation. |
-| Share a screen capture, file, video, or email | Uses it as context for the answer. |
-| Give it a clear task | Routes the task to the browser or your Mac. |
-| Save a task as a playbook | Makes it reusable and optionally scheduled. |
+https://github.com/user-attachments/assets/fc467068-9110-4891-8230-75624e7107e2
 
-You can switch between chat and task views yourself, but most prompts are
-routed automatically. Questions stay in chat. Clear instructions such as
-“search for three options and compare them” or “open System Settings and turn
-on dark mode” are treated as tasks.
+https://github.com/user-attachments/assets/4fe209dc-64e8-4652-8853-ea172575e1f9
 
-## Download
+The right panel can hold your code editor, files, terminal, review, and browser tabs. The chat stays beside them.
 
-**[Download the latest macOS build](https://github.com/jaiminjariwala/Computer_and_Browser_Use/releases/latest)**
+![Chat alongside the embedded browser](docs/media/browser-workspace.png)
 
-The current release is for Apple Silicon. Open the downloaded DMG and drag the
-app into Applications.
+### Settings in light and dark mode
 
-The app is not notarized yet. On first launch, right-click it, choose **Open**,
-then confirm once more. If macOS still blocks it:
+Choose a Classic or Coastal ball, optionally rotate the Dock icon, manage local model downloads, and edit what the assistant remembers.
 
-```bash
-xattr -cr "/Applications/Codex Lite.app"
+![Light mode settings](docs/media/settings-light.png)
+
+![Dark mode settings](docs/media/settings-dark.png)
+
+These are development screenshots recorded on September 13, 2026. They show the interface, not a benchmark of answer or code correctness.
+
+## What I built
+
+- Local text and code answers with Qwen Coder through Ollama.
+- Local screenshot understanding with Qwen3-VL. Capture a region with Cmd+Shift+D or attach an image.
+- Internet search with a visible Searching status. Google is tried first, with DuckDuckGo as a fallback. Search reads page text without vision calls.
+- A tabbed workspace with Monaco syntax highlighting, a right-side file tree, breadcrumbs, file icons, autosave, and compact scrollbars.
+- An embedded browser with its own navigation bar, plus terminal and code-review panels.
+- Saved chats and editable local memory.
+- Local Whisper dictation, image and document attachments, and video-frame input.
+- GitHub sign-in and a hosted Go backend connected to PostgreSQL.
+- A Stripe sandbox subscription demo that exercises checkout and access activation without a real payment.
+- Light and dark themes, compact controls, and the rolling ball response animation.
+
+## The payment is a demo
+
+The hosted demo uses Stripe sandbox. The displayed $1/month is a simulated subscription, not a charge to your bank account.
+
+Only on a checkout clearly marked as a sandbox or demo, use card `4242 4242 4242 4242`, a future expiry, and any three-digit CVC. Never enter a real card for this demo.
+
+GitHub sign-in and sandbox checkout have been tested against the hosted backend. This is separate from AI quality testing.
+
+## What runs where?
+
+```text
+Your Mac
+  Electron + React
+    |-- chats, memory, files
+    |-- Ollama -> Qwen text / screenshot models
+    |-- isolated browser -> Google / DuckDuckGo
+    |
+    +-- HTTPS -> Go backend on Render
+                    |-- GitHub OAuth
+                    |-- PostgreSQL on Supabase
+                    +-- Stripe sandbox + signed webhooks
 ```
 
-Every user signs in with GitHub and activates $1/month desktop access before
-starting a chat. The Go backend enforces access and usage limits. Publisher API
-keys must never be bundled in Electron. Downloads require a configured public
-backend; localhost development settings do not work on another user's computer.
+The Go server handles identity and subscription state. It is not the machine running the local Qwen models. The desktop app never needs the database password, Stripe secret key, or GitHub client secret.
 
-The current local development build still supports encrypted provider keys in
-Settings as a developer override. That is not the production onboarding flow,
-and the chat no longer asks end users to paste provider secrets inline. See
-[Managed AI and billing](./docs/MANAGED-AI.md).
+## Things I am still improving
 
-## Getting started
+This is a working prototype, not a replacement for a production coding assistant.
 
-1. Open Codex Lite and sign in with GitHub.
-2. Type a question and subscribe through the access dialog; then submit again.
-3. To ask about your screen, use one of the capture shortcuts below.
-4. To hand off a task, describe the outcome you want. Review the environment,
-   approval mode, and step budget before it starts.
+Small local models can misunderstand questions or produce incorrect code. Search currently supplies snippets rather than full articles. A sourced response is not automatically a correct response. The answer pipeline retries a plan-only or unsourced response once, then offers source links if it cannot produce a usable answer.
 
-### Shortcuts
+Search answers prefer the installed Qwen3 model when ready. Ordinary text and code chat stay on Qwen Coder.
 
-| Shortcut | Action |
-| --- | --- |
-| **Cmd+Shift+Space** | Show or hide Codex Lite |
-| **Cmd+Shift+D** | Capture a region |
-| **Cmd+Shift+F** | Capture a window |
-| **Cmd+Shift+S** | Capture the full screen |
-| **Cmd+Shift+Esc** | Stop an active task |
+Visual computer automation remains experimental and has separate capability checks. Screenshot understanding does not mean every desktop task is supported.
 
-Browser tasks do not need macOS control permissions. Tasks that act on your Mac
-need **Screen Recording** and **Accessibility**. Voice input needs
-**Microphone**, and camera recording needs **Camera**.
+Initial model setup needs several gigabytes of downloads and disk space. Text chat can become available before the screenshot model finishes. Hosted services can sleep or become unavailable; free hosting allowances are not an uptime guarantee.
 
-## Privacy and control
+## Run it locally
 
-- Chats, memories, playbooks, and settings are stored on your Mac.
-- The messages and selected context you send are passed to the AI provider you
-  configure.
-- Screen capture only starts when you use a Codex Lite shortcut.
-- Raw video stays on your Mac. Codex Lite sends a bounded set of
-  sampled frames to the provider instead.
-- Task runs have an activity trail, an approval mode, a step budget, and a
-  global stop shortcut.
-- Stored provider keys and the optional GitHub token are encrypted and never
-  exposed to the renderer.
-
-Computer control is still experimental. Use Manual mode for anything involving
-messages, purchases, credentials, deleting data, or other hard-to-reverse
-actions.
-
-## Build from source
-
-You need macOS and Node.js `^20.19` or `>=22.12` (Node 22 is recommended).
+Use macOS and a supported Node.js release for Vite 7, such as Node 22.12 or newer in the Node 22 line.
 
 ```bash
-git clone https://github.com/jaiminjariwala/Computer_and_Browser_Use.git
-cd Computer_and_Browser_Use
+git clone https://github.com/jaiminjariwala/Codex_Lite.git
+cd Codex_Lite
 npm install
-npx playwright install chromium
 npm run dev
 ```
 
-For tasks that control your Mac, install the current input fallback too:
-
-```bash
-brew install cliclick
-```
-
-Useful checks:
+Set `MANAGED_BACKEND_URL` in your ignored `.env.local` to the intended backend before building. The default app flow needs a working account backend. See [setup](docs/SETUP.md) for the full checklist.
 
 ```bash
 npm run typecheck
 npm test
-npm run eval:operator
 npm run build
 ```
 
-The managed AI and Plus billing service is being built in Go under
-[`backend`](./backend). Its local setup and Stripe test-mode checklist are in
-[`backend/README.md`](./backend/README.md).
+Source changes do not automatically update a previously downloaded DMG. Packaging and signing are covered in [development](docs/DEVELOPMENT.md).
 
-For local managed-service development, copy [`.env.example`](./.env.example)
-to `.env.local`, run the Go service and PostgreSQL as described above, then
-start Electron. Release builds should set `MANAGED_BACKEND_URL` to the deployed
-HTTPS service; provider and Stripe secrets must never be added to the Electron
-environment file.
+## Under the hood
 
-## Documentation
+Electron, React, TypeScript, Monaco, Ollama, Qwen, Go, PostgreSQL, GitHub OAuth, and Stripe.
 
-- [Setup](./docs/SETUP.md)
-- [How Codex Lite works](./docs/HOW-IT-WORKS.md)
-- [Safety model](./docs/SAFETY.md)
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Development and packaging](./docs/DEVELOPMENT.md)
-- [Managed Go backend and Stripe](./backend/README.md)
+- [Architecture and data flows](docs/ARCHITECTURE.md)
+- [How it works in plain language](docs/HOW-IT-WORKS.md)
+- [Backend and sandbox setup](docs/BACKEND.md)
+- [Local setup](docs/SETUP.md)
+- [Current feature inventory](docs/FEATURES.md)
+- [Technology choices](docs/TECH-STACK.md)
+- [Development and packaging](docs/DEVELOPMENT.md)
+- [Safety](docs/SAFETY.md)
 
-## Status
-
-Codex Lite is a personal R&D project. It is currently macOS-only
-and ships as an unsigned build. Deterministic routes work locally; model-backed
-chat and reasoning require a provider you connect. Browser and Mac task
-execution should be treated as experimental.
+Built by Jaimin Jariwala.

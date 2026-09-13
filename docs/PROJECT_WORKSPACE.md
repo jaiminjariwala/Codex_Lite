@@ -1,8 +1,10 @@
 # In-app project workspace
 
-Open the folder button in the top toolbar (or Cmd+P), then **Open folder** to select a project. Until a folder is selected, the app uses a dedicated `Projects/My workspace` folder inside its application-data directory, not its own source repository.
+Use the workspace + menu, then **Files and folders** (or Cmd+P) to select a project. Until a folder is selected, the app uses a dedicated `Projects/My workspace` folder inside its application-data directory, not its own source repository.
 
-The right panel includes editable Monaco file tabs, breadcrumbs, a lazy-loading file tree, a filter for loaded files, and a `+` menu for Files, Review, Terminal, and Browser. Cmd+S saves. Generated code can be saved as a new file. Unsaved edits survive hiding the panel; closing a modified tab asks before discarding them. Saves check the previous disk revision and reject conflicts.
+The right panel includes Monaco, breadcrumbs, a right-side lazy-loading file tree, a compact filter, and a + menu for Files and folders, Review, Terminal, and Browser. Selecting files reuses the folder's editor tab. Edits autosave after a debounce. Generated code still needs a destination through Save as file. Unsaved edits survive hiding the panel; closing a modified tab asks before discarding them. Saves check the previous disk revision and reject conflicts.
+
+The folder icon at the right end of the breadcrumbs toggles the tree. Editor scrollbars are thin and rounded. File-type icons distinguish source files, documents and configuration files.
 
 Workspace tabs sit in the window's top title-bar row, aligned with the macOS window controls. A subtle gray `+` follows the tabs directly. The tab strip shares the right panel's width while keeping its controls outside the draggable title-bar regions.
 

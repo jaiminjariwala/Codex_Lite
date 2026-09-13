@@ -1,5 +1,7 @@
 # AI gateway & models
 
+> Legacy/provider internals. The standard desktop build now uses private local Ollama for text and screenshot chat. See [Architecture](ARCHITECTURE.md) and [Setup](SETUP.md) for current onboarding. Provider forms described below are not the current default Settings UI.
+
 This app speaks the standard **OpenAI-compatible** chat format, so it can point
 at your own models without code changes: configure a base URL, a model id, and
 an API key when that provider needs one.

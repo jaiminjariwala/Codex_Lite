@@ -1,153 +1,54 @@
 # Setup
 
-This is the full "get it running on a fresh Mac" guide, covering both copilot
-mode and operator mode. If you only want copilot mode, you can skip the Docker
-and Colima parts.
+This guide describes the current local-model desktop build.
 
-## 1. Prerequisites
+## Desktop
 
-| Thing | Why | Notes |
-| --- | --- | --- |
-| macOS | The app is macOS-only right now. | Apple Silicon or Intel. |
-| Node.js 18+ | Build and dev tooling (electron-vite, Vitest). | `node -v` to check. |
-| An AI provider API key | Optional for deterministic routes; required for chat and model reasoning. | Gemini, OpenRouter, or another OpenAI-compatible provider you control. “Free” providers still require their own API key and enforce rate limits. |
-| Colima + Docker CLI | Only for the operator's **Sandboxed browser** environment. | Docker Desktop is not required (and may be license-blocked at work). |
+1. Use macOS and a Node version supported by Vite 7, such as Node 22.12 or newer in that release line.
+2. Install dependencies with `npm install`.
+3. Create an ignored `.env.local` with `MANAGED_BACKEND_URL=https://YOUR-BACKEND`.
+4. Run `npm run dev`.
+5. Sign in with GitHub through the configured backend.
+6. If access is required, finish the clearly marked Stripe sandbox checkout using a test card.
+7. Open Settings to inspect local model setup.
 
-## 2. Install
+The app prepares a private Ollama server and downloads Qwen Coder and Qwen3-VL when missing. Allow several gigabytes of network transfer and at least 7 GB free disk space for setup. Download speed depends on your connection and the model registry.
+
+Text can work once its model is installed, even if the vision download later fails. Use Resume / retry in Settings for interrupted setup. The status below the input reports progress and only reports both models ready when setup has completed.
+
+## Permissions
+
+Screen capture needs macOS Screen Recording permission. Dictation needs Microphone; camera capture needs Camera. Experimental computer control additionally needs Accessibility.
+
+Grant permissions in System Settings, Privacy & Security. Do not disable system protections just to run an untrusted binary. Distribution signing and notarization need separate verification.
+
+## Backend
+
+Follow [the backend guide](BACKEND.md). Keep secrets in backend environment configuration, never in Electron or source control.
+
+Do not create a second PostgreSQL database on Render if you are already using Supabase. The app only embeds the backend's public URL.
+
+## Verification
 
 ```bash
-git clone <your-fork-or-repo>
-cd computer-or-browser-use
-npm install
-```
-
-Run it in development (hot reload for the UI, auto-rebuild for the main process):
-
-```bash
-npm run dev
-```
-
-Or build and preview a production bundle:
-
-```bash
+npm run typecheck
+npm test
 npm run build
-npm start
+node scripts/smoke-workspace.mjs
+node scripts/smoke-web-search.cjs "a question to search"
 ```
 
-## 3. Configure credentials
-
-Both modes can reason through the same OpenAI-compatible provider. You enter it
-once, in the app.
-
-1. Launch the app and open **Settings** (top right of the sidebar).
-2. Fill in your gateway **base URL**, a **model** id, and your **API key**.
-3. Save.
-
-The key is encrypted at rest with Electron `safeStorage` (OS keychain backed),
-stored separately from the plain-text config, and never written into
-`config.json`.
-
-```
-   Settings form
-        |
-        v
-   ConfigStore.save()
-        |
-        +--> config.json          (baseURL, model)      not secret
-        +--> gateway-key.enc       (API key, encrypted)  keychain backed
-```
-
-### How the operator gets the same providers
-
-The operator keeps its own isolated config (so it cannot clobber the copilot's),
-but on every launch the app seeds that config from the primary provider and free
-hosted keys you already saved.
-
-```
-  launch
-    |
-    v
-  read copilot provider config + encrypted keys
-    |
-    v
-  operator ConfigStore.saveProviders(...)
-    |
-    v
-  operator can now reason
-```
-
-## 4. Grant macOS permissions
-
-| Permission | Needed for | When asked |
-| --- | --- | --- |
-| Screen Recording | Copilot capture, and operator in **My Mac** mode | First capture / first local run |
-| Accessibility | Operator input synthesis in **My Mac** mode | First local run |
-| Microphone | Voice dictation, and audio in videos you record in-app | First time you tap the mic |
-| Camera | Recording a video attachment with the camera button | First time you open the video recorder |
-
-If you deny the microphone but allow the camera, the recorder still works: it
-retries camera-only and records a video without an audio track.
-
-Grant them in System Settings -> Privacy & Security. The **Sandboxed browser**
-environment needs none of these, because it never touches your real desktop.
-
-## 5. Set up the sandboxed browser (operator only)
-
-The sandboxed browser runs inside a Docker container: a small Linux desktop with
-Chromium, watched live over noVNC. Because Docker Desktop is often blocked in
-corporate environments, we use Colima.
-
-Install and start Colima (one time):
-
-```bash
-brew install colima docker
-colima start
-docker context use colima   # if not already selected
-```
-
-Build the sandbox image (one time, or after changing the container):
-
-```bash
-cd operator-docker
-docker build -t computer-or-browser-use-desktop:latest .
-```
-
-That single image tag, `computer-or-browser-use-desktop:latest`, is what the app runs.
-You do not start the container yourself. The app does `docker run ...` when you
-pick **Sandboxed browser** and start a task, and tears it down afterward.
-
-```
-  pick "Sandboxed browser" + start goal
-        |
-        v
-  docker run computer-or-browser-use-desktop:latest   (Xvfb + fluxbox + Chromium + noVNC)
-        |
-        v
-  live desktop window opens (noVNC)  <-- you watch here
-        |
-        v
-  agent perceives + acts through the in-container control server
-```
-
-See [Sandbox container](./SANDBOX-CONTAINER.md) for what is inside the image.
-
-## 6. Verify
-
-```bash
-npm run typecheck   # no type errors
-npm test            # Vitest suite passes
-npm run build       # main + preload + 4 renderer entries build
-```
-
-If all three are green, you are set. Open the app, try a copilot capture, then
-flip on Operator and hand it a small web goal.
+The workspace smoke test uses fake IPC and Chrome. The search smoke test makes real public network requests through Electron, but does not itself validate a model answer.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| "Authentication failed" / "API key format" | Provider key or endpoint is wrong | Re-enter the provider settings in Settings. |
-| Operator says "configure a provider" | No provider was seeded yet | Save a primary, local, or free hosted provider in Settings first. |
-| Sandboxed browser will not start | Colima not running, or image missing | `colima start`, then rebuild the image. |
-| Nothing captures in copilot mode | Screen Recording not granted | System Settings -> Privacy & Security. |
-| Voice mic does nothing | Microphone not granted | System Settings -> Privacy & Security. |
+| Symptom | Check |
+| --- | --- |
+| Checkout unavailable | Backend Stripe key, sandbox price ID, checkout URL and webhook signing secret. |
+| Checkout returned but access is locked | Stripe event delivery and backend logs; a redirect is not proof of activation. |
+| Model download failed | Retry in Settings; check connectivity and available storage. |
+| Searching finishes without a useful answer | Snippet relevance and local model quality. Try an explicit date or open the source links. |
+| Screenshot question fails | Vision download and capability verification must finish. |
+| Login is slow after inactivity | The hosted account service may need to wake up. |
+
+Older provider configuration and container-operator guides describe optional or legacy paths, not the standard first-run experience.

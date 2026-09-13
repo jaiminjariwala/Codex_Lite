@@ -18,6 +18,8 @@ with Ctrl+C when finished. The validation commands above terminate on their own.
 
 ## GitHub OAuth Device Flow
 
+This section describes the retained legacy device-flow integration. Current hosted onboarding uses the Go authorization-code callback and server-held client secret. Follow [Backend setup](BACKEND.md) for the current flow; do not bundle that secret in Electron.
+
 Create a GitHub OAuth App for this application, enable **Device Flow**, and use
 only its public client ID. A client secret is not needed and must not be added to
 the repository or renderer. GitHub's official flow setup is documented at
@@ -228,6 +230,4 @@ Spaces and therefore remain manual.
 
 ## Credentials and providers
 
-See [AI gateway](./AI-GATEWAY.md). Configure an OpenAI-compatible primary
-provider, a local endpoint, or one of the supported hosted fallback keys in
-Settings.
+The default build prepares local Ollama models and uses the hosted account API for sign-in and sandbox access. See [Setup](SETUP.md), [Backend](BACKEND.md), and [Architecture](ARCHITECTURE.md). The [AI gateway](AI-GATEWAY.md) document describes retained provider internals.

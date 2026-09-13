@@ -1,298 +1,90 @@
 # Architecture
 
-Technical overview of how Codex Lite is built. For the friendly version see
-[How it works](./HOW-IT-WORKS.md).
+Current default desktop flow, September 2026. Older gateway and operator modules remain in the repository, but the standard chat path uses local Ollama.
 
-## Electron processes & windows
+## System map
 
-Codex Lite is an Electron app: one **main** process (full system access) and
-**renderer** windows (sandboxed UI) that talk to it only through a typed
-**preload bridge**.
-
-```
-                  ┌──────────────────────────────┐
-                  │   Main process (the brain)   │
-                  │  · global hotkey (⌘⇧D)       │
-                  │  · screen capture + crop     │
-                  │  · AI gateway client         │
-                  │  · session store (disk)      │
-                  │  · macOS permission checks   │
-                  └───────────────┬──────────────┘
-                                  │  ipcMain.handle / webContents.send
-                     ┌────────────┴────────────┐
-                     │      Preload bridge     │  window.glass.* (contextIsolated)
-                     └────────────┬────────────┘
-                  ┌───────────────┴───────────────┐
-                  v                               v
-      ┌───────────────────────┐       ┌───────────────────────┐
-      │    Sidebar window     │       │    Overlay window     │
-      │  React chat UI        │       │  transparent, full    │
-      │  · messages/markdown  │       │  screen, top-most     │
-      │  · model picker       │       │  · crosshair + drag   │
-      │  · voice mic          │       │  · follow-up input    │
-      │  · history + settings │       │                       │
-      └───────────────────────┘       └───────────────────────┘
+```text
++-------------------------- Your Mac ---------------------------+
+| React sidebar                                                |
+|  chat | settings | Monaco | file tree | browser chrome         |
+|                         | typed IPC                          |
+|                 context-isolated preload                     |
+|                         |                                    |
+| Electron main process                                        |
+|  |-- local session / memory storage                          |
+|  |-- workspace file IO, revision checks, terminal, Git        |
+|  |-- native embedded browser view                            |
+|  |-- isolated temporary search windows                       |
+|  |-- capture and model routing                               |
+|  +-- private Ollama server, loopback port 11435               |
+|        |-- qwen2.5-coder:1.5b for text                         |
+|        +-- qwen3-vl:2b for image-containing chat              |
++---------------------------|----------------------------------+
+                            | HTTPS for account operations
+                   +--------v---------+
+                   | Go API on Render |
+                   +--|------|-----|--+
+                      |      |     |
+                 GitHub  Supabase  Stripe sandbox
+                  OAuth  PostgreSQL   |
+                                      +-- signed webhook -> Go
 ```
 
-The renderer never touches Node/system APIs directly — it calls
-`window.glass.*`, which forwards to `ipcMain` handlers in the main process.
+The browser and search also contact external websites directly from the Mac. Account hosting does not make local model inference a cloud operation.
 
-## Two engines in one process
+## Chat and search
 
-The app now hosts two engines side by side in the same main process:
-
-- The **copilot** engine (original): capture -> advise, exposed on `window.glass`.
-- The **operator** engine (merged in): perceive -> reason -> act, exposed on
-  `window.operator`, vendored under `src/main/operator/`.
-
-They share the sidebar window and the user's credentials, but they are otherwise
-isolated: separate IPC channel namespaces, separate config file, separate session
-directory. See [Merge notes](./MERGE-NOTES.md) for how and why.
-
-In the sidebar itself, copilot and operator each keep their own conversation and
-their own history list; toggling Operator swaps which one is shown (the other is
-hidden, not lost), so each mode reads like its own workspace.
-
-```
-                 ┌──────────────────────────────────────────────┐
-                 │              Main process                    │
-                 │                                              │
-                 │   Smart Copilot             Computer/Browser │
-                 │   · capture shortcuts       · agent loop     │
-                 │   · capture + crop          · safety gate    │
-                 │   · gateway AI client       · environments   │
-                 │   · sessions/ (glass)       · operator-...   │
-                 │        glass:* + chat/       · op:* channels │
-                 │        session/config                        │
-                 └───────────────┬──────────────────────────────┘
-                                 │ ipcMain.handle / webContents.send
-                    ┌────────────┴────────────┐
-                    │      Preload bridge     │  window.glass + window.operator
-                    └────────────┬────────────┘
-              ┌──────────────────┼───────────────────┐
-              ▼                  ▼                    ▼
-   ┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐
-   │  Sidebar window  │ │ Overlay window │ │ Indicator overlay  │
-   │  chat + operator │ │ region capture │ │ "agent in control" │
-   │  toggle + header │ │                │ │ + Emergency Stop   │
-   └──────────────────┘ └────────────────┘ └────────────────────┘
-                                              (+ a separate noVNC
-                                               desktop window for
-                                               the sandbox browser)
+```text
+user message
+  -> access checks and intent routing
+  -> ordinary chat: bounded context -> local model -> response
+  -> web question: relative-year normalization
+       -> Google DOM snippets
+       -> DuckDuckGo if blocked, empty, or unavailable
+       -> dedicated final-answer prompt with source excerpts
+       -> usable sourced response?
+            yes -> display
+            no  -> one answer retry
+                   -> source-link fallback if still unusable
 ```
 
-## Source layout
+Search status is separate from model generation. The search windows are isolated from the user's browsing session and destroyed after use. Search does not solve CAPTCHAs or use screenshots. Extracted text is untrusted data.
 
-```
-src/
-├─ main/                 # Node side (the "brain")
-│  ├─ index.ts           # bootstrap: wires BOTH copilot and operator engines
-│  ├─ windows.ts         # creates Sidebar / Overlay / pencil windows
-│  ├─ capture.ts         # screen capture + crop to rectangle
-│  ├─ capture-orchestrator.ts  # permission gate -> overlay -> capture -> AI
-│  ├─ ai.ts              # OpenAI-compatible gateway client (+ fallback)
-│  ├─ session.ts         # in-memory conversation + running summary
-│  ├─ session-store.ts   # persistence to userData/sessions/*.json
-│  ├─ summarizer.ts      # folds old turns into the summary
-│  ├─ ipc.ts             # copilot ipcMain handlers + emitter helpers
-│  ├─ config.ts          # gateway config + encrypted credential store
-│  ├─ github-auth.ts     # GitHub Device Flow + safeStorage token store (main only)
-│  └─ operator/          # autonomous operator engine (self-contained)
-│     ├─ evals/          # deterministic AgentLoop scenarios, scoring, JSON CLI
-│     ├─ main/           # loop, safety, environments, executor, providers ...
-│     │  ├─ bootstrap/   # services + start gate + IPC wiring
-│     │  ├─ loop/        # perceive -> reason -> act state machine + progress checks
-│     │  ├─ safety/      # fail-closed gate, autonomy, kill-switch controller
-│     │  ├─ environment/ # local Mac + Playwright browser + container backends
-│     │  ├─ executor/    # native + cliclick input backends
-│     │  ├─ providers/   # OpenAI-compatible providers + tolerant parser
-│     │  ├─ perception/  # capture + observation
-│     │  ├─ memory.ts    # bounded, sanitized completed-session recall
-│     │  ├─ session*/    # operator session model + store (isolated)
-│     │  ├─ config*/     # operator provider config (isolated file)
-│     │  ├─ windows/     # indicator overlay + optional noVNC window
-│     │  └─ ipc.ts       # op:* channels (namespaced, no collisions)
-│     └─ shared/         # operator types, resolved via the @op-shared alias
-├─ preload/index.ts      # typed window.glass and window.operator bridges
-├─ renderer/
-│  ├─ sidebar/           # shared chat shell + separate mode conversations
-│  │  ├─ App.tsx         # composer, captures, operator controls
-│  │  ├─ ChatSidebar.tsx # history rail: chats, mode toggle, GitHub account, Settings
-│  │  ├─ VideoRecorder.tsx # getUserMedia/MediaRecorder camera recording dialog
-│  │  ├─ video.ts        # extractVideoFrames: local video -> bounded JPEG frames
-│  │  ├─ privacy.ts      # shared secret/identifier detection + redaction
-│  │  ├─ operator.ts     # privacy-aware operator activity explanations
-│  │  ├─ pdf.ts          # rasterizes attached PDFs to images (pdfjs)
-│  │  ├─ SetupCard.tsx    # in-chat key setup card (first-run, no provider)
-│  │  └─ Settings.tsx    # provider and fallback configuration
-│  ├─ overlay/           # capture surface
-│  ├─ indicator/         # agent-in-control overlay + Emergency Stop
-│  ├─ voice-lib/         # shared voice UI
-│  └─ voice-lib-v2/      # Whisper dictation engine (the only one)
-└─ shared/types.ts       # Smart Copilot types
+The current web-answer step is text-only and focused on the latest question. It does not inspect attached images or resolve every context-dependent follow-up. Relative numeric years are calculated from the current year; this is not a general natural-language date parser.
+
+The answer guard checks for source URLs and planning language. It does not verify factual entailment. Snippets may be incomplete, ambiguous, or misleading.
+
+Search synthesis prefers the installed Qwen3-VL model for its newer language capabilities, even though this step sends text only. It falls back to the text model if Qwen3 is not ready. Numbered references are resolved only against the retrieved source list.
+
+## Model setup
+
+```text
+verify local Ollama -> start private process -> check installed models
+  -> ensure text model -> text ready
+  -> ensure screenshot model -> verify vision capability -> both ready
+                               |
+                      download error -> Settings retry
+                      text stays available if already ready
 ```
 
-Two path aliases keep the type worlds apart: `@shared/*` for Smart Copilot and
-`@op-shared/*` for the operator.
+Readiness is actual setup state, not a timer. A failed optional screenshot download must not stop the working text model. The renderer shows a short status label; setup controls live in Settings.
 
-## Operator evaluation architecture
+## Workspace layout
 
-The standalone `npm run eval:operator` command loads the same `AgentLoop` and
-in-memory `SessionManager` used by the app. It replaces only the four injected
-side-effect boundaries—perception, reasoning, safety, and execution—with
-scripted collaborators and supplies deterministic clocks and IDs.
+React owns the tabs and browser toolbar. Electron owns the native browser page. Menus only hide the native page when their rectangles overlap it, because a native view otherwise covers renderer overlays.
 
-```
-  scripted perception ─┐
-  scripted reasoning ──┼──► real AgentLoop ─► real SessionManager ─► JSON report
-  scripted safety ─────┤
-  scripted executor ───┘
-```
+Files selected from the tree reuse the folder's editor tab. Writes use revision checks and a debounce rather than a permanent Save button. Generated snippets still need Save as file because they do not yet have a destination.
 
-No Electron process, browser, API key, network request, application-session
-persistence, or real input action is used while the AgentLoop runs. After the
-suite finishes, the CLI writes only its deterministic JSON evaluation report.
-This makes terminal-state, retry, budget, confirmation, token, cost, duration,
-and efficiency results repeatable while still testing the production orchestration
-code.
+Chat text is revealed progressively in the renderer. A DOM observer follows content growth while the reader is near the bottom. Scrolling upward releases follow mode.
 
-## Capture flow (technical)
+## Security boundaries
 
-```
- renderer (sidebar)            main process                         renderer (overlay)
- ─────────────────             ─────────────                        ──────────────────
- hotkey ⌘⇧D  ───ipc──►  capture:trigger
-                         └─ checkScreenPermission()
-                              │ granted
-                              ▼
-                         WindowManager.showOverlay()  ───────────►  overlay shows
-                                                                    user drags rect
-                         capture:region  ◄──────ipc────────────────  submitRegion(rect,text)
-                         └─ closeOverlay(); wait ~250ms (clean frame)
-                         └─ CaptureService crop → base64 PNG
-                         └─ route on the follow-up text:
-                              ├─ text typed  → ChatFlow.handleCapture → ai.complete → turn:appended
-                              └─ text empty  → capture:staged ──ipc──► carousel above the input
-```
+- Renderer code uses narrow preload APIs, not unrestricted Node access.
+- Model downloads and search are network operations even though inference is local.
+- Database, GitHub OAuth, and Stripe secrets belong only on the backend.
+- The webhook signature, not the browser return page, establishes billing events.
+- Experimental operator tools have their own safety and capability checks.
+- Local screenshot support does not enable every visual automation route.
 
-Every capture stages into the composer carousel — the overlay has no input of
-its own; the question is typed (or dictated) in the one composer. Staged shots
-(and images/PDFs added via the paperclip button, PDFs rasterized by `pdf.ts`)
-are sent together on Send via `chat:send-captures` as one multi-image message.
-
-## Video attachment pipeline
-
-Videos join the same carousel as screenshots, but they are converted into a
-bounded image sequence entirely inside the sidebar renderer before anything is
-sent. The raw video file never crosses IPC and never reaches a provider.
-
-```
- upload (paperclip → Files / drag&drop)  record (paperclip → Camera)
-   mp4 / m4v / mov / webm / ogv            getUserMedia + MediaRecorder
-              │                            (camera-only retry if mic denied)
-              └────────────┬───────────────┘
-                           ▼
-              staged carousel card: playable <video> preview
-              + "Sampling frames…" while extraction runs
-                           │
-                           ▼
-              extractVideoFrames() in sidebar/video.ts
-              ├─ recover duration (MediaRecorder WebM files often
-              │  omit it; a far seek reveals the real end time)
-              ├─ pick ≤ 12 timestamps (~1 per 4s, skewed off the
-              │  frequently-blank first/last samples)
-              ├─ seek + draw each frame to a canvas, downscaled so
-              │  the longest edge is ≤ 1280px
-              └─ encode JPEG data URLs -> TurnCapture[] where each
-                 carries videoFrame { sequenceId, index/count,
-                 timestampSeconds, durationSeconds }
-                           │
-                           ▼  Send (blocked with a tooltip while extracting)
-              chat:send-captures  — the same channel screenshots use
-                           │
-                           ▼
-              main ai.ts captureParts(): each frame becomes a text
-              label ("Video sequence <id>, frame i/n at m:ss …")
-              followed by a normal image_url part, so any vision
-              model reads the frames as one chronological video
-```
-
-Because frames reuse the existing `chat:send-captures` path, video support
-required no new IPC channel, no provider-side video API, and no change to the
-session model: a video is just a user turn whose `captures` include ordered
-`videoFrame` metadata.
-
-## Reasoning fallback chain
-
-`ai.complete` no longer just tries one gateway. It runs a short chain — your
-own OpenAI-compatible endpoint, then the free hosted keys (OpenRouter ->
-Gemini). If everything fails, main decides the outcome: nothing configured at
-all -> the sidebar shows an in-chat key setup card (`setup:needed`); keys exist
-but unreachable -> a short error turn lands in the origin chat. See
-[Fallback chain](./FALLBACK.md).
-
-## Window behavior
-
-A single-instance lock ensures only one instance runs (a second launch just
-focuses the existing window). The desktop window opens wide enough for a
-persistent 296px chat rail plus the conversation canvas; below the responsive
-breakpoint the rail becomes an overlay. The window is normal by default, and a
-header pin toggle (`window:set-pinned`) floats it on top when you want.
-
-The chat rail synthesizes the active in-memory session alongside archived
-history, so the selected title and live progress never disappear merely because
-`current.json` is excluded from archive listings. Its footer owns Settings and
-GitHub account controls.
-
-GitHub authentication uses OAuth Device Flow in `github-auth.ts`. Only a public
-client id is configured. Device/access-token exchange, profile lookup, and
-`safeStorage` encryption stay in main; preload exposes only non-secret status,
-challenge code/URL, and minimal identity.
-
-## IPC channel map (preload bridge)
-
-| Direction | Channel | Purpose |
-| --- | --- | --- |
-| SB → main | `chat:send` | send a typed message |
-| SB → main | `chat:send-captures` | send staged screenshots/images as one message |
-| SB → main | `capture:trigger` | begin a region capture |
-| overlay → main | `capture:region` / `capture:cancel` | rectangle chosen / cancelled |
-| SB → main | `session:new/get/list/open/delete` | conversation management |
-| SB → main | `models:list` | list gateway models |
-| SB → main | `config:get-status` / `config:save` | provider settings + keys |
-| SB → main | `window:set-pinned` | pin/unpin the window on top |
-| SB → main | `github-auth:status/start/logout` | non-secret status, begin Device Flow, or remove the encrypted token |
-| main → SB | `github-auth:changed` | non-secret sign-in lifecycle and minimal identity |
-| main → SB | `turn:appended`, `request:pending`, `error:show`, `session:state`, `summary:state`, `credentials:required` | live UI updates |
-| main → SB | `capture:staged` | a captured shot to add to the carousel |
-| main → SB | `setup:needed` | no provider configured — show the in-chat key setup card |
-
-The operator engine adds its own `op:*` channels on a second bridge
-(`window.operator`), kept separate from the copilot channels above. The full map
-for both engines is in [IPC channels](./IPC-CHANNELS.md).
-
-## Build & run
-
-electron-vite builds three targets (main, preload, renderer); electron-builder
-packages the `.app`. See [Development](./DEVELOPMENT.md).
-
-## Security notes
-- `contextIsolation` on, `nodeIntegration` off; renderer reaches main only via
-  the preload bridge.
-- Renderer CSP is restrictive, with a deliberate relaxation for the on-device
-  speech model (WASM/WebGPU + model fetch). See [Voice](./VOICE.md).
-- The sidebar CSP additionally allows `media-src 'self' blob:` so the staged
-  video preview card can play a local blob URL; no remote media source is
-  allowed.
-- A Chromium permission request handler in `index.ts` grants only the `media`
-  permission, and only to the trusted sidebar `webContents`; every other
-  permission and every other renderer is denied.
-- Screen Recording is a runtime macOS permission (TCC), not an entitlement.
-- Microphone uses an entitlement + `NSMicrophoneUsageDescription`; the usage
-  string also covers audio in videos you record in-app.
-- Camera recording uses the `com.apple.security.device.camera` entitlement +
-  `NSCameraUsageDescription` (asked the first time you open the recorder).
-- GitHub access tokens are encrypted with `safeStorage` in the main process
-  (`github-token.enc`) and never cross the preload bridge; the renderer sees
-  only non-secret status, the short user code, the verification URL, and
-  minimal identity.
+See [backend flow](BACKEND.md), [features](FEATURES.md), and [safety](SAFETY.md).

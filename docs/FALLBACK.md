@@ -1,5 +1,7 @@
 # Chat fallback chain
 
+> Legacy provider-chain reference. The default desktop route uses local Ollama, with no configured hosted fallback list. Search fallback means Google to DuckDuckGo, not switching cloud AI providers. See [Architecture](ARCHITECTURE.md).
+
 Smart Copilot keeps answering by walking a deliberately short provider chain:
 your own endpoint first, then free hosted keys. If one provider fails, the
 next takes over on the same request.
