@@ -13,9 +13,11 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { ProjectWorkspace } from '/src/renderer/sidebar/ProjectWorkspace';
 import { PlusUpgradeModal } from '/src/renderer/sidebar/PlusUpgradeModal';
+import { followConversation } from '/src/renderer/sidebar/conversation-follow';
 import '/src/renderer/sidebar/styles.css';
 const files = {'src/main.ts': {path:'src/main.ts', content:'export const rocket = "Ready for launch";\\n', revision:'1'}, 'README.md': {path:'README.md', content:'# Rocket workspace', revision:'1'}};
 let listener = () => {};
+window.testFollow=followConversation;
 window.glass = {startPlusCheckout:async()=>{throw new Error('Sandbox checkout unavailable')}};
 window.showAccess=()=>{const host=document.createElement('div');document.body.append(host);const root=createRoot(host);root.render(<PlusUpgradeModal onClose={()=>root.unmount()}/>)};
 window.workspace = {
@@ -37,7 +39,7 @@ window.browserWorkspace={
  create:async()=>{const tab={id:'test',title:'New tab',url:'about:blank',loading:false,canGoBack:false,canGoForward:false};browserTabs=[tab];browserListener({tabs:browserTabs,selectedId:'test',focusId:'test'});return tab},
  navigate:async(id,address)=>{window.browserAddress=address},
  close:async()=>{browserTabs=[];browserListener({tabs:[],selectedId:null})},
- present:async()=>{},action:async()=>{},onChanged:cb=>{browserListener=cb;return()=>{}},onFocusAddress:()=>()=>{}
+ present:async(id,bounds)=>{window.browserBounds=bounds},action:async()=>{},onChanged:cb=>{browserListener=cb;return()=>{}},onFocusAddress:()=>()=>{}
 };
 createRoot(document.getElementById('root')).render(<div style={{display:'flex',height:'100vh'}}><div style={{flex:1,padding:40}}>Chat stays beside the project.</div><ProjectWorkspace visible artifact={null} onClose={()=>{}} width={850} onResize={()=>{}} /></div>);
 `
@@ -101,6 +103,11 @@ try {
     await page.getByLabel('Search or enter a URL').fill('youtube.com')
     await page.getByRole('button',{name:'Go to address'}).click()
     await page.waitForFunction(()=>window.browserAddress==='youtube.com')
+    await page.waitForFunction(()=>window.browserBounds !== null && window.browserBounds !== undefined)
+    await page.evaluate(() => { const menu=document.createElement('div'); menu.id='account-menu-fixture'; menu.setAttribute('role','menu'); menu.style.cssText='position:fixed;left:0;top:0;width:100px;height:100px'; document.body.append(menu) })
+    await page.waitForTimeout(100)
+    assert.notEqual(await page.evaluate(()=>window.browserBounds),null)
+    await page.evaluate(() => document.getElementById('account-menu-fixture').remove())
     assert.equal(await page.locator('iframe').count(),0)
     assert.equal(await page.getByRole('navigation',{name:'Project files'}).count(),0)
     await page.getByRole('button',{name:'Add workspace tab'}).click()
@@ -125,6 +132,18 @@ try {
     await page.keyboard.press('Escape')
     assert.equal(await page.getByRole('dialog').count(),0)
     assert.deepEqual(errors,[])
+    await page.evaluate(() => {
+        const el=document.createElement('div'); el.id='follow-test'; el.style.cssText='position:fixed;left:0;top:0;width:100px;height:100px;overflow:auto';
+        el.textContent='line '.repeat(300); document.body.append(el); window.testFollow(el);
+    })
+    await page.waitForFunction(()=>{const el=document.getElementById('follow-test');return el.scrollHeight-el.clientHeight-el.scrollTop<2})
+    await page.evaluate(()=>document.getElementById('follow-test').append(' more text '.repeat(300)))
+    await page.waitForFunction(()=>{const el=document.getElementById('follow-test');return el.scrollHeight-el.clientHeight-el.scrollTop<2})
+    await page.evaluate(()=>{const el=document.getElementById('follow-test');el.dispatchEvent(new WheelEvent('wheel',{deltaY:-100}));el.scrollTop=0})
+    await page.waitForTimeout(50)
+    await page.evaluate(()=>document.getElementById('follow-test').append(' more text '.repeat(300)))
+    await page.waitForTimeout(100)
+    assert.equal(await page.evaluate(()=>document.getElementById('follow-test').scrollTop),0)
     console.log(`Workspace smoke passed: tree, editor, save, terminal tab, embedded browser controls, Stop. Screenshot: ${screenshot}`)
 } finally {
     await browser?.close()

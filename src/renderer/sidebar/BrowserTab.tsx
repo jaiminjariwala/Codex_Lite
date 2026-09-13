@@ -16,7 +16,10 @@ export function BrowserTab({ tab, active }: {tab:BrowserTabState;active:boolean}
         const update = (): void => {
             if (disposed) return
             const rect = slot.current?.getBoundingClientRect()
-            const blocked = [...document.querySelectorAll('[role="dialog"], [role="menu"]')].some(node => (node as HTMLElement).offsetHeight > 0)
+            const blocked = rect && [...document.querySelectorAll('[role="dialog"], [role="menu"]')].some(node => {
+                const overlay = node.getBoundingClientRect()
+                return overlay.width > 0 && overlay.height > 0 && overlay.left < rect.right && overlay.right > rect.left && overlay.top < rect.bottom && overlay.bottom > rect.top
+            })
             const bounds = active && !blocked && rect && rect.width > 0 && rect.height > 0 ? {x:rect.x,y:rect.y,width:rect.width,height:rect.height} : null
             const key = JSON.stringify([bounds,tab.url])
             if (key === last) return

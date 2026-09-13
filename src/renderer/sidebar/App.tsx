@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { LocalAISetup } from './LocalAISetup'
+import { followConversation } from './conversation-follow'
 import { RollingBall } from './RollingBall'
 import type { ConfigStatus, GitHubAuthStatus, GlassError, SessionListItem, SessionSummary, SessionView, TurnCapture, TurnView, WorkspaceContext } from '@shared/types'
 import type { ConfirmationRequest, LoopStateView, Playbook } from '@op-shared/types'
@@ -499,15 +500,9 @@ export function App(): React.JSX.Element {
 
     useEffect(() => {
         const el = conversationRef.current
-        if (el) {
-            el.scrollTop = el.scrollHeight
-        }
-    }, [
-        state.turns,
-        state.pending,
-        state.error,
-        opSteps
-    ])
+        if (!el) return
+        return followConversation(el)
+    }, [showSettings])
 
     // Auto-open the newest copilot answer's code in the right-hand panel the
     // first time it arrives (Claude-style). Marked per-turn so it opens exactly
@@ -1925,7 +1920,6 @@ export function App(): React.JSX.Element {
                     )}
                     {!showSettings && (
                         <div className="glass-composer-wrap">
-                            <LocalAISetup />
                         <div className={`glass-composer${composerExpanded ? ' glass-composer--expanded' : ''}`}>
                             <div className="glass-composer__top">
                                 <div className="glass-composer__text">
@@ -2112,7 +2106,7 @@ export function App(): React.JSX.Element {
                                 </div>
                             </div>
                         </div>
-                        <div className="glass-composer-model" title="Qwen Coder runs locally on this computer">Qwen Coder · Local</div>
+                        <LocalAISetup label />
                         </div>
                     )}
                   </div>

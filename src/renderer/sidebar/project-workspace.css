@@ -68,8 +68,7 @@
 .project-tree input:focus,.project-tree input:focus-visible{outline:none;border-color:transparent;box-shadow:none}
 .project-tree input{border-color:transparent}
 .project-tree input:focus{background:var(--bg-subtle)}
-.project-tree-toggle{display:flex;justify-content:flex-end;padding:2px 10px;flex:0 0 auto}
-.project-tree-toggle button{display:grid;place-items:center;width:28px;height:28px;padding:5px}
+.project-breadcrumb .project-tree-toggle{display:grid;place-items:center;width:28px;height:28px;padding:6px;flex:0 0 28px;margin-left:auto}
 .project-menu button,.workspace-bar .project-tabs .project-menu button{padding:6px 10px;min-height:30px;gap:10px}
 .project-menu .workspace-icon{width:17px;height:17px}
 .file-type-icon{display:inline-grid;place-items:center;width:17px;height:18px;flex:0 0 17px;border-radius:4px;background:color-mix(in srgb,currentColor 12%,transparent);font-size:10px;font-weight:650;line-height:1}
@@ -78,8 +77,9 @@
 .project-tree__chevron{display:flex;width:17px;flex:0 0 17px}
 .project-tree__chevron.is-expanded svg{transform:rotate(90deg)}
 .project-tree__entry>.workspace-icon{width:17px;height:17px;color:var(--text-dim)}
-.project-breadcrumb{min-height:34px;padding:6px 12px}
+.project-breadcrumb{min-height:34px;padding:3px 12px;flex-wrap:nowrap}
 .project-breadcrumb>span{display:flex;align-items:center;gap:7px;overflow:auto;scrollbar-width:none}
 .project-breadcrumb .workspace-icon{width:12px;height:12px}
+.project-breadcrumb .project-tree-toggle svg{width:16px;height:16px;stroke-width:1.5}
 .project-breadcrumb [aria-current=page]{color:var(--text);font-weight:500}
 .project-workspace .monaco-scrollable-element>.scrollbar>.slider{border-radius:999px}
