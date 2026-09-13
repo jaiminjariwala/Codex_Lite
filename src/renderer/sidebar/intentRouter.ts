@@ -13,6 +13,8 @@
  *  - "open system settings and turn on dark mode"       -> operator + local (Mac)
  */
 
+import { wantsWebSearch } from '../../shared/web-search'
+
 export type RoutedIntent =
     | { mode: 'copilot' }
     | { mode: 'operator'; environment: 'browser' | 'local' }
@@ -20,6 +22,7 @@ export type RoutedIntent =
 /** Creation requests belong to the in-app project runner, never an external IDE. */
 export function isWorkspaceTask(text: string): boolean {
     const t = text.trim().toLowerCase()
+    if (wantsWebSearch(t)) return false
     // Code answers are chat, not filesystem/command tasks. The response viewer
     // automatically opens fenced code in the right-hand panel.
     if (isCodeQuestion(t)) return false
@@ -47,7 +50,7 @@ const LOCAL_SIGNALS =
  */
 export function routeIntent(text: string, hasImages: boolean): RoutedIntent {
     const t = text.trim().toLowerCase()
-    if (/\bsearch\b.*\b(internet|web|online|for)\b|\blook up\b/.test(t)) return { mode: 'copilot' }
+    if (wantsWebSearch(t)) return { mode: 'copilot' }
     if (t.length === 0) return { mode: 'copilot' }
     if (isCodeQuestion(t)) return { mode: 'copilot' }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+vi.mock('./text-web-search', () => ({ textWebSearch: vi.fn(async () => JSON.stringify({ results: [{ title: 'Source', url: 'https://example.org/evidence', snippet: 'Evidence text' }] })) }))
 import type {
     GatewayConfig,
     SessionContext,
@@ -45,6 +46,34 @@ const emptySummary: SessionSummary = {
     completedSteps: [],
     updatedThroughTurnId: null
 }
+
+it('uses the dedicated search provider and completes a sourced answer', async () => {
+    const fake = makeFakeClient('The evidence says so [1].')
+    const provider = vi.fn(async () => ({ baseURL: 'http://localhost:11435/v1', model: 'research-model', apiKey: 'local' }))
+    const ai = new GatewayAIClient({ getConfig: async () => ({ baseURL: 'http://localhost:11435/v1', model: 'text' }), getApiKey: async () => null, getSearchProvider: provider, createClient: () => fake.client })
+    const answer = await ai.complete({ summary: emptySummary, recentTurns: [userTurn('search', 'search on internet for a fact')] })
+    expect(provider).toHaveBeenCalledOnce()
+    expect(fake.calls[0].model).toBe('research-model')
+    expect(answer).toContain('[1](https://example.org/evidence)')
+})
+
+it('routes screenshot messages to local vision without a cloud fallback', async () => {
+    const fake = makeFakeClient('I see a screenshot')
+    const fallback = vi.fn(async () => [])
+    const ai = new GatewayAIClient({
+        textOnly: true,
+        getConfig: async () => ({ baseURL: 'http://localhost:11435/v1', model: 'text' }),
+        getApiKey: async () => null,
+        getVisionProvider: async () => ({ baseURL: 'http://localhost:11435/v1', model: 'qwen3-vl:2b', apiKey: 'local' }),
+        getFallbackProviders: fallback,
+        createClient: () => fake.client
+    })
+    const result = await ai.complete({ summary: emptySummary, recentTurns: [userTurn('image', 'Describe this', capture('data:image/png;base64,AAAA'))] })
+    expect(result).toBe('I see a screenshot')
+    expect(fake.calls[0].model).toBe('qwen3-vl:2b')
+    expect(fake.calls[0].messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'))).toBe(true)
+    expect(fallback).not.toHaveBeenCalled()
+})
 
 /** A fake chat client that records the params it received. */
 function makeFakeClient(content: string | null): {

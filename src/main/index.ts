@@ -378,6 +378,9 @@ app.whenReady().then(async () => {
     })
     const aiClient = new GatewayAIClient({
         textOnly: true,
+        getVisionProvider: () => localAI.provider(true),
+        // The newer installed Qwen3 model also handles text-only research synthesis.
+        getSearchProvider: () => localAI.provider(true).catch(() => localAI.provider()),
         // Signed-in release users reach the publisher-managed service first;
         // no provider key crosses into the app. Developer-owned local keys
         // remain available as an explicit fallback during backend development.
